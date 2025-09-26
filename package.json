@@ -1,0 +1,32 @@
+{
+  "name": "askmate",
+  "version": "1.0.0",
+  "description": "A complete Q&A web application for classrooms",
+  "main": "setup.js",
+  "scripts": {
+    "setup": "node setup.js",
+    "create-env": "node -e \"const fs=require('fs');const path=require('path');const envPath=path.join(__dirname,'Server','.env');if(!fs.existsSync(envPath)){fs.writeFileSync(envPath,'PORT=5000\\nMONGODB_URI=mongodb+srv://singlapulkit1103_db_user:pulkit2005@askmate.31u5zre.mongodb.net/\\nJWT_SECRET=askmate_super_secret_jwt_key_2024_secure_random_string_here\\nNODE_ENV=development');console.log('✅ Created .env file');}else{console.log('✅ .env file already exists');}\"",
+    "dev": "concurrently \"cd Server && npm run dev\" \"cd FrontEnd && npm run dev\"",
+    "start": "concurrently \"cd Server && npm start\" \"cd FrontEnd && npm run build && npm run preview\"",
+    "install-all": "npm install && cd Server && npm install && cd ../FrontEnd && npm install",
+    "build": "cd FrontEnd && npm run build",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "qa",
+    "education",
+    "classroom",
+    "react",
+    "nodejs",
+    "express",
+    "mongodb"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

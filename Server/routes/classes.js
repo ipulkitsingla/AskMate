@@ -31,20 +31,41 @@ router.post('/create', authenticateToken, requireRole(['teacher', 'admin']), [
       createdBy: req.user._id
     });
 
-    await newClass.save();
+    try {
+      await newClass.save();
+      
+      // Verify classCode was generated
+      if (!newClass.classCode) {
+        throw new Error('Failed to generate class code');
+      }
 
-    // Add class to user's created classes
-    await User.findByIdAndUpdate(req.user._id, {
-      $push: { createdClasses: newClass._id }
-    });
+      console.log('Class created successfully:', {
+        id: newClass._id,
+        name: newClass.name,
+        classCode: newClass.classCode,
+        members: newClass.members.length,
+        creator: req.user._id
+      });
 
-    // Populate the class with creator info
-    await newClass.populate('createdBy', 'name email');
+      // Add class to user's created classes and joined classes
+      await User.findByIdAndUpdate(req.user._id, {
+        $push: { 
+          createdClasses: newClass._id,
+          joinedClasses: newClass._id
+        }
+      });
 
-    res.status(201).json({
-      message: 'Class created successfully',
-      class: newClass
-    });
+      // Populate the class with creator info
+      await newClass.populate('createdBy', 'name email');
+
+      res.status(201).json({
+        message: 'Class created successfully',
+        class: newClass
+      });
+    } catch (saveError) {
+      console.error('Error saving class:', saveError);
+      throw saveError;
+    }
   } catch (error) {
     console.error('Create class error:', error);
     res.status(500).json({ message: 'Server error creating class' });
@@ -145,15 +166,67 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/classes/check/:id
+// @desc    Check if class exists (for debugging)
+// @access  Private
+router.get('/check/:id', authenticateToken, async (req, res) => {
+  try {
+    const classId = req.params.id;
+    const classDoc = await Class.findById(classId);
+    
+    if (!classDoc) {
+      return res.status(404).json({ 
+        message: 'Class not found',
+        classId: classId,
+        exists: false
+      });
+    }
+
+    res.json({ 
+      message: 'Class exists',
+      classId: classId,
+      exists: true,
+      name: classDoc.name,
+      members: classDoc.members.length
+    });
+  } catch (error) {
+    console.error('Check class error:', error);
+    res.status(500).json({ message: 'Server error checking class' });
+  }
+});
+
 // @route   GET /api/classes/:id
 // @desc    Get class details
 // @access  Private (Class members only)
-router.get('/:id', authenticateToken, requireClassMember, async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const classDoc = await Class.findById(req.params.id)
-      .populate('createdBy', 'name email')
-      .populate('members.user', 'name email role');
+    const classId = req.params.id;
+    const userId = req.user._id;
 
+    console.log('Fetching class:', classId, 'for user:', userId);
+
+    // First check if class exists
+    const classDoc = await Class.findById(classId);
+    if (!classDoc) {
+      console.log('Class not found:', classId);
+      return res.status(404).json({ message: 'Class not found' });
+    }
+
+    // Check if user is a member
+    const isMember = classDoc.members.some(member => 
+      member.user.toString() === userId.toString()
+    );
+
+    if (!isMember) {
+      console.log('User not a member of class:', userId, classId);
+      return res.status(403).json({ message: 'You are not a member of this class' });
+    }
+
+    // Populate the class data
+    await classDoc.populate('createdBy', 'name email');
+    await classDoc.populate('members.user', 'name email role');
+
+    console.log('Class found and user is member:', classDoc.name);
     res.json({ class: classDoc });
   } catch (error) {
     console.error('Get class error:', error);

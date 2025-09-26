@@ -8,6 +8,23 @@ import upload, { handleUploadError } from '../middleware/upload.js';
 
 const router = express.Router();
 
+// @route   GET /api/answers/user/stats
+// @desc    Get user's answer statistics
+// @access  Private
+router.get('/user/stats', authenticateToken, async (req, res) => {
+  try {
+    const count = await Answer.countDocuments({ 
+      author: req.user._id, 
+      isActive: true 
+    });
+    
+    res.json({ count });
+  } catch (error) {
+    console.error('Get answer stats error:', error);
+    res.status(500).json({ message: 'Server error fetching answer stats' });
+  }
+});
+
 // @route   GET /api/answers/question/:questionId
 // @desc    Get all answers for a question
 // @access  Private (Class members only)

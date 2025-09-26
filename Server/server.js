@@ -22,6 +22,13 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Ensure JWT_SECRET is set
+if (!process.env.JWT_SECRET) {
+  console.error('JWT_SECRET environment variable is required');
+  process.env.JWT_SECRET = 'askmate_super_secret_jwt_key_2024_secure_random_string_here';
+  console.warn('Using default JWT_SECRET. Please set JWT_SECRET in your environment variables for production.');
+}
+
 // Security middleware
 app.use(helmet());
 

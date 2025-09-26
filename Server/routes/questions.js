@@ -2,6 +2,7 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import Question from '../models/Question.js';
 import Class from '../models/Class.js';
+import User from '../models/User.js';
 import { authenticateToken, requireClassMember, requireClassTeacher } from '../middleware/auth.js';
 import upload, { handleUploadError } from '../middleware/upload.js';
 
@@ -10,10 +11,29 @@ const router = express.Router();
 // @route   GET /api/questions/class/:classId
 // @desc    Get all questions for a class
 // @access  Private (Class members only)
-router.get('/class/:classId', authenticateToken, requireClassMember, async (req, res) => {
+router.get('/class/:classId', authenticateToken, async (req, res) => {
   try {
     const { classId } = req.params;
+    const userId = req.user._id;
     const { page = 1, limit = 10, search, tag, sort = 'newest' } = req.query;
+
+    console.log('Fetching questions for class:', classId, 'user:', userId);
+
+    // Check if user is member of the class
+    const classDoc = await Class.findById(classId);
+    if (!classDoc) {
+      console.log('Class not found for questions:', classId);
+      return res.status(404).json({ message: 'Class not found' });
+    }
+
+    const isMember = classDoc.members.some(member => 
+      member.user.toString() === userId.toString()
+    );
+
+    if (!isMember) {
+      console.log('User not a member of class for questions:', userId, classId);
+      return res.status(403).json({ message: 'You are not a member of this class' });
+    }
 
     // Build query
     let query = { classId, isActive: true };
@@ -80,6 +100,51 @@ router.get('/class/:classId', authenticateToken, requireClassMember, async (req,
   }
 });
 
+// @route   GET /api/questions/recent
+// @desc    Get recent questions across all user's classes
+// @access  Private
+router.get('/recent', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 5 } = req.query;
+    
+    // Get user's classes
+    const user = await User.findById(req.user._id).populate('joinedClasses');
+    const classIds = user.joinedClasses.map(c => c._id);
+
+    const questions = await Question.find({ 
+      classId: { $in: classIds }, 
+      isActive: true 
+    })
+      .populate('author', 'name email')
+      .populate('classId', 'name')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    res.json({ questions });
+  } catch (error) {
+    console.error('Get recent questions error:', error);
+    res.status(500).json({ message: 'Server error fetching recent questions' });
+  }
+});
+
+// @route   GET /api/questions/user/stats
+// @desc    Get user's question statistics
+// @access  Private
+router.get('/user/stats', authenticateToken, async (req, res) => {
+  try {
+    const count = await Question.countDocuments({ 
+      author: req.user._id, 
+      isActive: true 
+    });
+    
+    res.json({ count });
+  } catch (error) {
+    console.error('Get question stats error:', error);
+    res.status(500).json({ message: 'Server error fetching question stats' });
+  }
+});
+
 // @route   GET /api/questions/:id
 // @desc    Get single question
 // @access  Private (Class members only)
@@ -125,14 +190,20 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // @route   POST /api/questions/class/:classId
 // @desc    Create a new question
 // @access  Private (Class members only)
-router.post('/class/:classId', authenticateToken, requireClassMember, upload.array('files', 5), handleUploadError, [
+router.post('/class/:classId', authenticateToken, upload.array('files', 5), handleUploadError, [
   body('title').trim().isLength({ min: 5, max: 200 }).withMessage('Title must be 5-200 characters'),
   body('description').trim().isLength({ min: 10, max: 2000 }).withMessage('Description must be 10-2000 characters'),
-  body('tags').optional().isArray().withMessage('Tags must be an array')
+  body('tags').optional().custom((value) => {
+    if (Array.isArray(value) || typeof value === 'string') {
+      return true;
+    }
+    throw new Error('Tags must be an array or string');
+  }).withMessage('Tags must be an array or string')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({ 
         message: 'Validation failed', 
         errors: errors.array() 
@@ -140,10 +211,30 @@ router.post('/class/:classId', authenticateToken, requireClassMember, upload.arr
     }
 
     const { classId } = req.params;
+    const userId = req.user._id;
     const { title, description, tags = [] } = req.body;
 
+    console.log('Creating question for class:', classId, 'user:', userId);
+    console.log('Question data:', { title, description, tags });
+
+    // Check if user is member of the class
+    const classDoc = await Class.findById(classId);
+    if (!classDoc) {
+      console.log('Class not found for question creation:', classId);
+      return res.status(404).json({ message: 'Class not found' });
+    }
+
+    const isMember = classDoc.members.some(member => 
+      member.user.toString() === userId.toString()
+    );
+
+    if (!isMember) {
+      console.log('User not a member of class for question creation:', userId, classId);
+      return res.status(403).json({ message: 'You are not a member of this class' });
+    }
+
     // Check class settings for file uploads
-    if (req.files && req.files.length > 0 && !req.class.settings.allowFileUploads) {
+    if (req.files && req.files.length > 0 && !classDoc.settings.allowFileUploads) {
       return res.status(400).json({ message: 'File uploads are not allowed in this class' });
     }
 
@@ -156,11 +247,21 @@ router.post('/class/:classId', authenticateToken, requireClassMember, upload.arr
       path: file.path
     })) : [];
 
+    // Process tags - handle both string and array inputs
+    let processedTags = [];
+    if (Array.isArray(tags)) {
+      processedTags = tags.filter(tag => tag && tag.trim().length > 0);
+    } else if (typeof tags === 'string') {
+      processedTags = tags.split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+    }
+
     // Create question
     const question = new Question({
       title,
       description,
-      tags: tags.filter(tag => tag.trim().length > 0),
+      tags: processedTags,
       classId,
       author: req.user._id,
       files
@@ -175,6 +276,13 @@ router.post('/class/:classId', authenticateToken, requireClassMember, upload.arr
     });
   } catch (error) {
     console.error('Create question error:', error);
+    if (error.name === 'ValidationError') {
+      console.error('Validation errors:', error.errors);
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: Object.values(error.errors).map(err => err.message)
+      });
+    }
     res.status(500).json({ message: 'Server error creating question' });
   }
 });

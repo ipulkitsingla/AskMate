@@ -14,7 +14,7 @@ const classSchema = new mongoose.Schema({
   },
   classCode: {
     type: String,
-    required: [true, 'Class code is required'],
+    required: false, // Will be set in pre-save hook
     unique: true,
     uppercase: true,
     trim: true,
@@ -68,30 +68,41 @@ const classSchema = new mongoose.Schema({
 
 // Generate unique class code before saving
 classSchema.pre('save', async function(next) {
-  if (!this.isNew) return next();
+  if (!this.isNew || this.classCode) return next();
   
-  const generateClassCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+  try {
+    const generateClassCode = () => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let result = '';
+      for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+    
+    let classCode;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (!isUnique && attempts < maxAttempts) {
+      classCode = generateClassCode();
+      const existingClass = await mongoose.model('Class').findOne({ classCode });
+      if (!existingClass) {
+        isUnique = true;
+      }
+      attempts++;
     }
-    return result;
-  };
-  
-  let classCode;
-  let isUnique = false;
-  
-  while (!isUnique) {
-    classCode = generateClassCode();
-    const existingClass = await mongoose.model('Class').findOne({ classCode });
-    if (!existingClass) {
-      isUnique = true;
+    
+    if (!isUnique) {
+      return next(new Error('Failed to generate unique class code after multiple attempts'));
     }
+    
+    this.classCode = classCode;
+    next();
+  } catch (error) {
+    next(error);
   }
-  
-  this.classCode = classCode;
-  next();
 });
 
 // Add creator as teacher member
@@ -103,6 +114,13 @@ classSchema.pre('save', function(next) {
     });
   }
   next();
+});
+
+// Post-save validation to ensure classCode exists
+classSchema.post('save', function(doc) {
+  if (!doc.classCode) {
+    console.error('Warning: Class saved without classCode:', doc._id);
+  }
 });
 
 export default mongoose.model('Class', classSchema);

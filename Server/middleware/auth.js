@@ -46,11 +46,11 @@ export const requireRole = (roles) => {
 
 export const requireClassMember = async (req, res, next) => {
   try {
-    const { classId } = req.params;
+    const { id } = req.params;
     const userId = req.user._id;
 
     const Class = (await import('../models/Class.js')).default;
-    const classDoc = await Class.findById(classId);
+    const classDoc = await Class.findById(id);
     
     if (!classDoc) {
       return res.status(404).json({ message: 'Class not found' });
@@ -73,11 +73,11 @@ export const requireClassMember = async (req, res, next) => {
 
 export const requireClassTeacher = async (req, res, next) => {
   try {
-    const { classId } = req.params;
+    const { id } = req.params;
     const userId = req.user._id;
 
     const Class = (await import('../models/Class.js')).default;
-    const classDoc = await Class.findById(classId);
+    const classDoc = await Class.findById(id);
     
     if (!classDoc) {
       return res.status(404).json({ message: 'Class not found' });
