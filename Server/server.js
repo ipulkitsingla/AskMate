@@ -34,19 +34,30 @@ if (!process.env.JWT_SECRET) {
 // CORS configuration (place BEFORE security and rate limiting)
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
-      process.env.FRONTEND_URL || 'https://your-frontend-domain.vercel.app'
+      (process.env.FRONTEND_URL || 'https://your-frontend-domain.vercel.app').replace(/\/$/, '')
     ]
   : ['http://localhost:3000', 'http://localhost:5173'];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // allow non-browser tools
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin) return callback(null, true); // allow server-to-server, curl, health checks
+
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    if (allowedOrigins.includes(normalizedOrigin)) return callback(null, true);
+
+    try {
+      const { hostname } = new URL(normalizedOrigin);
+      // Allow all vercel.app preview domains
+      if (hostname.endsWith('.vercel.app')) return callback(null, true);
+    } catch (e) {
+      // fall through to rejection
+    }
+
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 204
 }));
 
