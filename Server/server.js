@@ -21,6 +21,8 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+// Trust proxy headers when behind a proxy (e.g., Render)
+app.set('trust proxy', 1);
 
 // Ensure JWT_SECRET is set
 if (!process.env.JWT_SECRET) {
@@ -28,6 +30,28 @@ if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = 'askmate_super_secret_jwt_key_2024_secure_random_string_here';
   console.warn('Using default JWT_SECRET. Please set JWT_SECRET in your environment variables for production.');
 }
+
+// CORS configuration (place BEFORE security and rate limiting)
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [
+      process.env.FRONTEND_URL || 'https://your-frontend-domain.vercel.app'
+    ]
+  : ['http://localhost:3000', 'http://localhost:5173'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // allow non-browser tools
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204
+}));
+
+// Explicitly handle preflight
+app.options('*', cors());
 
 // Security middleware
 app.use(helmet());
@@ -38,14 +62,6 @@ const limiter = rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 });
 app.use(limiter);
-
-// CORS configuration
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? [process.env.FRONTEND_URL || 'https://your-frontend-domain.vercel.app'] 
-    : ['http://localhost:3000', 'http://localhost:5173'],
-  credentials: true
-}));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
