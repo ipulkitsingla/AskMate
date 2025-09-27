@@ -234,6 +234,36 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/classes/:id/members
+// @desc    Get class members list
+// @access  Private (Class teachers only)
+router.get('/:id/members', authenticateToken, requireClassTeacher, async (req, res) => {
+  try {
+    const classDoc = req.class;
+    
+    // Populate member details
+    await classDoc.populate('members.user', 'name email role');
+    
+    // Sort members: teachers first, then students, then by join date
+    const sortedMembers = classDoc.members.sort((a, b) => {
+      if (a.role !== b.role) {
+        return a.role === 'teacher' ? -1 : 1;
+      }
+      return new Date(a.joinedAt) - new Date(b.joinedAt);
+    });
+
+    res.json({ 
+      members: sortedMembers,
+      totalCount: sortedMembers.length,
+      teacherCount: sortedMembers.filter(m => m.role === 'teacher').length,
+      studentCount: sortedMembers.filter(m => m.role === 'student').length
+    });
+  } catch (error) {
+    console.error('Get members error:', error);
+    res.status(500).json({ message: 'Server error fetching members' });
+  }
+});
+
 // @route   PUT /api/classes/:id
 // @desc    Update class settings
 // @access  Private (Class teachers only)

@@ -17,6 +17,12 @@
   overflow: hidden;
 }
 
+.class-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
 .class-header::before {
   content: '';
   position: absolute;

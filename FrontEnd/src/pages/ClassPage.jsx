@@ -1,19 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { FiPlus, FiSearch, FiFilter, FiMessageSquare, FiClock, FiEye, FiThumbsUp, FiThumbsDown } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiFilter, FiMessageSquare, FiClock, FiEye, FiThumbsUp, FiThumbsDown, FiUsers } from 'react-icons/fi';
 import { format } from 'date-fns';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { useAuth } from '../contexts/AuthContext';
+import MemberListModal from '../components/MemberList';
 import './ClassPage.css';
 
 const ClassPage = () => {
   const { id } = useParams();
+  const { user } = useAuth();
   const [classData, setClassData] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showMemberList, setShowMemberList] = useState(false);
+  const [isTeacher, setIsTeacher] = useState(false);
 
   useEffect(() => {
     fetchClassData();
@@ -24,6 +29,12 @@ const ClassPage = () => {
     try {
       const response = await axios.get(`/classes/${id}`);
       setClassData(response.data.class);
+      
+      // Check if current user is a teacher in this class
+      const currentUserMember = response.data.class.members?.find(member => 
+        member.user?._id === user?._id || member.user === user?._id
+      );
+      setIsTeacher(currentUserMember?.role === 'teacher');
     } catch (error) {
       console.error('Error fetching class data:', error);
       
@@ -107,13 +118,24 @@ const ClassPage = () => {
           </div>
         </div>
         
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowCreateForm(true)}
-        >
-          <FiPlus className="icon" />
-          Ask Question
-        </button>
+        <div className="class-actions">
+          {isTeacher && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowMemberList(true)}
+            >
+              <FiUsers className="icon" />
+              View Members
+            </button>
+          )}
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowCreateForm(true)}
+          >
+            <FiPlus className="icon" />
+            Ask Question
+          </button>
+        </div>
       </div>
 
       <div className="class-content">
@@ -172,6 +194,13 @@ const ClassPage = () => {
             setShowCreateForm(false);
             fetchQuestions();
           }}
+        />
+      )}
+
+      {showMemberList && (
+        <MemberListModal
+          classId={id}
+          onClose={() => setShowMemberList(false)}
         />
       )}
     </div>
